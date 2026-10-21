@@ -7,3 +7,5 @@ DevSecOps-проект: «охранник на входе + камеры + пу
 
 test
 test
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
