@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -8,16 +9,24 @@ import (
 	"time"
 
 	"github.com/Nova-61/sentinel/services/auth-service/internal/config"
+	"github.com/Nova-61/sentinel/services/auth-service/internal/store"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	cfg, err := config.Load()
-	if err != nil{
+	if err != nil {
 		logger.Error("invalid config", "error", err)
 		os.Exit(1)
 	}
+
+	pool, err := store.NewPool(context.Background(), cfg.DatabaseURL.Reveal())
+	if err != nil {
+		logger.Error("database connection failed", "error", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
