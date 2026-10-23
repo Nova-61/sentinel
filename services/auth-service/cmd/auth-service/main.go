@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/Nova-61/sentinel/services/auth-service/internal/config"
@@ -13,18 +14,25 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	cfg, err := config.Load()
 	if err != nil {
 		logger.Error("invalid config", "error", err)
-		os.Exit(1)
+		return 1
 	}
 
-	pool, err := store.NewPool(context.Background(), cfg.DatabaseURL.Reveal())
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := store.NewPool(ctx, cfg.DatabaseURL.Reveal())
 	if err != nil {
 		logger.Error("database connection failed", "error", err)
-		os.Exit(1)
+		return 1
 	}
 	defer pool.Close()
 
@@ -44,9 +52,26 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	logger.Info("auth-service starting", "addr", srv.Addr)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	errCh := make(chan error, 1)
+	go func() {
+		logger.Info("auth-service starting", "addr", srv.Addr)
+		errCh <- srv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errCh:
 		logger.Error("server failed", "error", err)
-		os.Exit(1)
+		return 1
+	case <-ctx.Done():
+		logger.Info("shutdown signal received")
 	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.Error("graceful shutdown failed", "error", err)
+		return 1
+	}
+	logger.Info("server stopped")
+	return 0
 }
