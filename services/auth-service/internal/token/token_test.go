@@ -86,3 +86,19 @@ func TestParseRejectsGarbage(t *testing.T) {
 		}
 	}
 }
+
+func TestParseRejectsOtherHMACAlgorithm(t *testing.T) {
+	claims := jwt.RegisteredClaims{
+		Issuer:    issuer,
+		Subject:   "attacker",
+		Audience:  jwt.ClaimStrings{audience},
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+	}
+	raw, err := jwt.NewWithClaims(jwt.SigningMethodHS512, claims).SignedString(testKey)
+	if err != nil {
+		t.Fatalf("building HS512 token: %v", err)
+	}
+	if _, err := newTestManager(t, testKey).Parse(raw); err == nil {
+		t.Error("Parse() accepted a token signed with HS512, expected only HS256")
+	}
+}
