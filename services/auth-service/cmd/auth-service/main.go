@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Nova-61/sentinel/services/auth-service/internal/config"
+	"github.com/Nova-61/sentinel/services/auth-service/internal/httpapi"
 	"github.com/Nova-61/sentinel/services/auth-service/internal/store"
 )
 
@@ -42,6 +43,9 @@ func run() int {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+
+	api := &httpapi.Handler{Users: store.NewUsers(pool), Logger: logger}
+	mux.HandleFunc("POST /register", api.Register)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
