@@ -43,6 +43,7 @@ func newLoginHandler(t *testing.T, lookup fakeLookup) (*Handler, *token.Manager)
 	return &Handler{
 		Lookup:    lookup,
 		Tokens:    tm,
+		Sessions:  &fakeSessions{},
 		DummyHash: dummy,
 		Logger:    slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	}, tm
@@ -131,5 +132,61 @@ func TestLoginStatuses(t *testing.T) {
 				t.Errorf("status = %d, want %d, body: %s", rec.Code, tt.want, rec.Body.String())
 			}
 		})
+	}
+}
+
+type fakeSessions struct {
+	err    error
+	jti    string
+	userID string
+	ttl    time.Duration
+}
+
+func (f *fakeSessions) Create(_ context.Context, jti, userID string, ttl time.Duration) error {
+	f.jti, f.userID, f.ttl = jti, userID, ttl
+	return f.err
+}
+
+func TestLoginCreatesSessionForIssuedToken(t *testing.T) {
+	h, tm := newLoginHandler(t, existingUser(t))
+	fs := &fakeSessions{}
+	h.Sessions = fs
+
+	rec := doLogin(h, `{"email":"a@example.com","password":"`+loginPW+`"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response is not JSON: %v", err)
+	}
+	claims, err := tm.Parse(resp.AccessToken)
+	if err != nil {
+		t.Fatalf("issued token does not parse: %v", err)
+	}
+	if fs.jti == "" || fs.jti != claims.ID {
+		t.Errorf("session jti = %q, token jti = %q", fs.jti, claims.ID)
+	}
+	if fs.userID != "id-1" {
+		t.Errorf("session userID = %q, want id-1", fs.userID)
+	}
+	if fs.ttl <= 0 || fs.ttl > time.Minute {
+		t.Errorf("session ttl = %v, want within (0, 1m]", fs.ttl)
+	}
+}
+
+func TestLoginFailsClosedWhenSessionStoreDown(t *testing.T) {
+	h, _ := newLoginHandler(t, existingUser(t))
+	h.Sessions = &fakeSessions{err: errors.New("redis down")}
+
+	rec := doLogin(h, `{"email":"a@example.com","password":"`+loginPW+`"}`)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "access_token") {
+		t.Error("a token was issued even though the session could not be stored")
 	}
 }

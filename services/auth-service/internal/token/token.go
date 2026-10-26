@@ -24,6 +24,13 @@ type Manager struct {
 	now func() time.Time
 }
 
+// Issued описывает выданный токен вместе с идентификатором для сессии.
+type Issued struct {
+	Token     string
+	ID        string // jti: по нему сессия ищется в Redis
+	ExpiresAt time.Time
+}
+
 func NewManager(key []byte, ttl time.Duration) (*Manager, error) {
 	if len(key) < MinKeyLen {
 		return nil, fmt.Errorf("signing key must be at least %d bytes", MinKeyLen)
@@ -34,12 +41,13 @@ func NewManager(key []byte, ttl time.Duration) (*Manager, error) {
 	return &Manager{key: key, ttl: ttl, now: time.Now}, nil
 }
 
-// Issue выдаёт подписанный токен для пользователя и возвращает время истечения.
-func (m *Manager) Issue(userID string) (string, time.Time, error) {
+// Issue выдаёт подписанный токен для пользователя.
+func (m *Manager) Issue(userID string) (Issued, error) {
 	id := make([]byte, 16)
 	if _, err := rand.Read(id); err != nil {
-		return "", time.Time{}, fmt.Errorf("generate token id: %w", err)
+		return Issued{}, fmt.Errorf("generate token id: %w", err)
 	}
+	jti := hex.EncodeToString(id)
 
 	now := m.now()
 	exp := now.Add(m.ttl)
@@ -50,14 +58,14 @@ func (m *Manager) Issue(userID string) (string, time.Time, error) {
 		IssuedAt:  jwt.NewNumericDate(now),
 		NotBefore: jwt.NewNumericDate(now),
 		ExpiresAt: jwt.NewNumericDate(exp),
-		ID:        hex.EncodeToString(id),
+		ID:        jti,
 	}
 
 	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.key)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("sign token: %w", err)
+		return Issued{}, fmt.Errorf("sign token: %w", err)
 	}
-	return signed, exp, nil
+	return Issued{Token: signed, ID: jti, ExpiresAt: exp}, nil
 }
 
 // Parse проверяет подпись, алгоритм, издателя, адресата и срок.
