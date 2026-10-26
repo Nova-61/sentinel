@@ -39,6 +39,13 @@ func run() int {
 	}
 	defer pool.Close()
 
+	rdb, err := store.NewRedis(ctx, cfg.RedisAddr, cfg.RedisPassword.Reveal())
+	if err != nil {
+		logger.Error("redis connection failed", "error", err)
+		return 1
+	}
+	defer rdb.Close()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
