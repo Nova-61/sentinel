@@ -112,3 +112,20 @@ func TestIssuedIDMatchesToken(t *testing.T) {
 		t.Error("two tokens share the same jti")
 	}
 }
+
+func TestParseRejectsWrongAlg(t *testing.T) {
+	claims := jwt.RegisteredClaims{
+		Issuer:    issuer,
+		Subject:   "attacker",
+		Audience:  jwt.ClaimStrings{audience},
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+	}
+	// подписываем HS512, а парсер ждёт HS256
+	raw, err := jwt.NewWithClaims(jwt.SigningMethodHS512, claims).SignedString(testKey)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if _, err := newTestManager(t, testKey).Parse(raw); err == nil {
+		t.Error("Parse() accepted a token with a different algorithm")
+	}
+}
