@@ -19,8 +19,11 @@ type UserStore interface {
 }
 
 type Handler struct {
-	Users  UserStore
-	Logger *slog.Logger
+	Users     UserStore
+	Lookup    UserLookup
+	Tokens    TokenIssuer
+	DummyHash string
+	Logger    *slog.Logger
 }
 
 type registerRequest struct {
