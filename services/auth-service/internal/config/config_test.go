@@ -9,7 +9,7 @@ import (
 
 const (
 	validDB  = "postgres://user:pass@127.0.0.1:5432/db"
-	validKey = "0123456789abcdef0123456789abcdef"
+	validKey = "test-only-signing-key-32-bytes-ok"
 )
 
 func TestLoad(t *testing.T) {
