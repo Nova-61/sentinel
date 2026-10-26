@@ -11,7 +11,9 @@ import (
 
 	"github.com/Nova-61/sentinel/services/auth-service/internal/config"
 	"github.com/Nova-61/sentinel/services/auth-service/internal/httpapi"
+	"github.com/Nova-61/sentinel/services/auth-service/internal/password"
 	"github.com/Nova-61/sentinel/services/auth-service/internal/store"
+	"github.com/Nova-61/sentinel/services/auth-service/internal/token"
 )
 
 func main() {
@@ -44,8 +46,27 @@ func run() int {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	api := &httpapi.Handler{Users: store.NewUsers(pool), Logger: logger}
+	tokens, err := token.NewManager([]byte(cfg.JWTKey.Reveal()), cfg.AccessTTL)
+	if err != nil {
+		logger.Error("token manager failed", "error", err)
+		return 1
+	}
+	dummyHash, err := password.Hash([]byte("timing-equalizer-password"))
+	if err != nil {
+		logger.Error("dummy hash failed", "error", err)
+		return 1
+	}
+
+	users := store.NewUsers(pool)
+	api := &httpapi.Handler{
+		Users:     users,
+		Lookup:    users,
+		Tokens:    tokens,
+		DummyHash: dummyHash,
+		Logger:    logger,
+	}
 	mux.HandleFunc("POST /register", api.Register)
+	mux.HandleFunc("POST /login", api.Login)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
