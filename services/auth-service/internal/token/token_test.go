@@ -21,15 +21,15 @@ func newTestManager(t *testing.T, key []byte) *Manager {
 func TestIssueAndParse(t *testing.T) {
 	m := newTestManager(t, testKey)
 
-	raw, exp, err := m.Issue("user-1")
+	issued, err := m.Issue("user-1")
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
-	if !exp.After(time.Now()) {
+	if !issued.ExpiresAt.After(time.Now()) {
 		t.Error("expiration is not in the future")
 	}
 
-	claims, err := m.Parse(raw)
+	claims, err := m.Parse(issued.Token)
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
@@ -45,7 +45,8 @@ func TestNewManagerRejectsShortKey(t *testing.T) {
 }
 
 func TestParseRejectsWrongKey(t *testing.T) {
-	raw, _, _ := newTestManager(t, testKey).Issue("user-1")
+	issued, _ := newTestManager(t, testKey).Issue("user-1")
+	raw := issued.Token
 	other := newTestManager(t, []byte("ffffffffffffffffffffffffffffffff"))
 	if _, err := other.Parse(raw); err == nil {
 		t.Error("Parse() accepted a token signed with another key")
@@ -55,7 +56,8 @@ func TestParseRejectsWrongKey(t *testing.T) {
 func TestParseRejectsExpired(t *testing.T) {
 	old := newTestManager(t, testKey)
 	old.now = func() time.Time { return time.Now().Add(-time.Hour) }
-	raw, _, _ := old.Issue("user-1")
+	issued, _ := old.Issue("user-1")
+	raw := issued.Token
 
 	if _, err := newTestManager(t, testKey).Parse(raw); err == nil {
 		t.Error("Parse() accepted an expired token")
@@ -84,5 +86,46 @@ func TestParseRejectsGarbage(t *testing.T) {
 		if _, err := m.Parse(raw); err == nil {
 			t.Errorf("Parse(%q) accepted garbage", raw)
 		}
+	}
+}
+
+func TestIssuedIDMatchesToken(t *testing.T) {
+	m := newTestManager(t, testKey)
+
+	first, err := m.Issue("user-1")
+	if err != nil {
+		t.Fatalf("Issue() error = %v", err)
+	}
+	second, err := m.Issue("user-1")
+	if err != nil {
+		t.Fatalf("Issue() error = %v", err)
+	}
+
+	claims, err := m.Parse(first.Token)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if first.ID == "" || claims.ID != first.ID {
+		t.Errorf("Issued.ID = %q, jti in token = %q: session key would not match", first.ID, claims.ID)
+	}
+	if first.ID == second.ID {
+		t.Error("two tokens share the same jti")
+	}
+}
+
+func TestParseRejectsWrongAlg(t *testing.T) {
+	claims := jwt.RegisteredClaims{
+		Issuer:    issuer,
+		Subject:   "attacker",
+		Audience:  jwt.ClaimStrings{audience},
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+	}
+	// подписываем HS512, а парсер ждёт HS256
+	raw, err := jwt.NewWithClaims(jwt.SigningMethodHS512, claims).SignedString(testKey)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if _, err := newTestManager(t, testKey).Parse(raw); err == nil {
+		t.Error("Parse() accepted a token with a different algorithm")
 	}
 }

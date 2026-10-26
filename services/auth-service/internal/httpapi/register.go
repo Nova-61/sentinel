@@ -22,6 +22,7 @@ type Handler struct {
 	Users     UserStore
 	Lookup    UserLookup
 	Tokens    TokenIssuer
+	Sessions  SessionStore
 	DummyHash string
 	Logger    *slog.Logger
 }

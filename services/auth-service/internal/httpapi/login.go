@@ -10,6 +10,7 @@ import (
 
 	"github.com/Nova-61/sentinel/services/auth-service/internal/password"
 	"github.com/Nova-61/sentinel/services/auth-service/internal/store"
+	"github.com/Nova-61/sentinel/services/auth-service/internal/token"
 )
 
 type UserLookup interface {
@@ -17,7 +18,11 @@ type UserLookup interface {
 }
 
 type TokenIssuer interface {
-	Issue(userID string) (string, time.Time, error)
+	Issue(userID string) (token.Issued, error)
+}
+
+type SessionStore interface {
+	Create(ctx context.Context, jti, userID string, ttl time.Duration) error
 }
 
 type loginRequest struct {
@@ -52,7 +57,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case errors.Is(err, store.ErrNotFound):
-		password.Verify(h.DummyHash, pw) // выравниваем время ответа
+		password.Verify(h.DummyHash, pw)
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	default:
@@ -61,17 +66,25 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	raw, exp, err := h.Tokens.Issue(user.ID)
+	issued, err := h.Tokens.Issue(user.ID)
 	if err != nil {
 		h.Logger.Error("issue token failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 
+	// Токен без сессии бесполезен, поэтому при сбое не выдаём его вовсе (fail closed).
+	ttl := time.Until(issued.ExpiresAt)
+	if err := h.Sessions.Create(r.Context(), issued.ID, user.ID, ttl); err != nil {
+		h.Logger.Error("create session failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]string{
-		"access_token": raw,
+		"access_token": issued.Token,
 		"token_type":   "Bearer",
-		"expires_at":   exp.UTC().Format(time.RFC3339),
+		"expires_at":   issued.ExpiresAt.UTC().Format(time.RFC3339),
 	})
 }
