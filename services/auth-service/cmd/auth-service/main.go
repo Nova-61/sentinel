@@ -69,6 +69,7 @@ func run() int {
 		Users:     users,
 		Lookup:    users,
 		Tokens:    tokens,
+		Sessions:  store.NewSessions(rdb),
 		DummyHash: dummyHash,
 		Logger:    logger,
 	}
