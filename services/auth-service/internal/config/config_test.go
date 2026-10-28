@@ -41,6 +41,7 @@ func TestLoad(t *testing.T) {
 			t.Setenv("AUTH_DATABASE_URL", tt.db)
 			t.Setenv("AUTH_JWT_KEY", tt.key)
 			t.Setenv("AUTH_ACCESS_TTL", tt.ttl)
+			t.Setenv("AUTH_REDIS_PASSWORD", strings.Repeat("x", 20))
 
 			cfg, err := Load()
 			if (err != nil) != tt.wantErr {
@@ -75,5 +76,54 @@ func TestSecretIsRedacted(t *testing.T) {
 	out := fmt.Sprintf("%v|%s|%+v|%#v", s, s, s, s)
 	if strings.Contains(out, "super-secret-value") {
 		t.Fatalf("secret leaked into formatted output: %s", out)
+	}
+}
+
+func TestLoadRedis(t *testing.T) {
+	longPW := strings.Repeat("x", 20)
+
+	tests := []struct {
+		name     string
+		addr     string
+		pw       string
+		wantAddr string
+		wantErr  bool
+	}{
+		{"default addr", "", longPW, "127.0.0.1:6379", false},
+		{"custom addr", "redis:6379", longPW, "redis:6379", false},
+		{"addr without port", "redis", longPW, "", true},
+		{"missing password", "", "", "", true},
+		{"short password", "", "short", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AUTH_DATABASE_URL", validDB)
+			t.Setenv("AUTH_JWT_KEY", validKey)
+			t.Setenv("AUTH_REDIS_ADDR", tt.addr)
+			t.Setenv("AUTH_REDIS_PASSWORD", tt.pw)
+
+			cfg, err := Load()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Load() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && cfg.RedisAddr != tt.wantAddr {
+				t.Errorf("RedisAddr = %q, want %q", cfg.RedisAddr, tt.wantAddr)
+			}
+		})
+	}
+}
+
+func TestLoadErrorDoesNotLeakRedisPassword(t *testing.T) {
+	const shortPW = "tiny-pw-value"
+	t.Setenv("AUTH_DATABASE_URL", validDB)
+	t.Setenv("AUTH_JWT_KEY", validKey)
+	t.Setenv("AUTH_REDIS_PASSWORD", shortPW)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() accepted a short redis password")
+	}
+	if strings.Contains(err.Error(), shortPW) {
+		t.Errorf("error leaks the password value: %v", err)
 	}
 }
