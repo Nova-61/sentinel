@@ -12,6 +12,7 @@ import (
 	"github.com/Nova-61/sentinel/services/auth-service/internal/config"
 	"github.com/Nova-61/sentinel/services/auth-service/internal/httpapi"
 	"github.com/Nova-61/sentinel/services/auth-service/internal/password"
+	"github.com/Nova-61/sentinel/services/auth-service/internal/secretbox"
 	"github.com/Nova-61/sentinel/services/auth-service/internal/store"
 	"github.com/Nova-61/sentinel/services/auth-service/internal/token"
 )
@@ -56,6 +57,11 @@ func run() int {
 		logger.Error("dummy hash failed", "error", err)
 		return 1
 	}
+	box, err := secretbox.New([]byte(cfg.MFAKey.Reveal()))
+	if err != nil {
+		logger.Error("secretbox failed", "error", err)
+		return 1
+	}
 
 	users := store.NewUsers(pool)
 	sessions := store.NewSessions(rdb)
@@ -66,6 +72,8 @@ func run() int {
 		Sessions:  sessions,
 		Parser:    tokens,
 		Checker:   sessions,
+		MFA:       users,
+		Box:       box,
 		DummyHash: dummyHash,
 		Logger:    logger,
 	}
@@ -80,6 +88,8 @@ func run() int {
 	mux.HandleFunc("POST /login", api.Login)
 	mux.Handle("GET /validate", api.Authenticate(http.HandlerFunc(api.Validate)))
 	mux.Handle("POST /logout", api.Authenticate(http.HandlerFunc(api.Logout)))
+	mux.Handle("POST /mfa/enroll", api.Authenticate(http.HandlerFunc(api.MFAEnroll)))
+	mux.Handle("POST /mfa/confirm", api.Authenticate(http.HandlerFunc(api.MFAConfirm)))
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
