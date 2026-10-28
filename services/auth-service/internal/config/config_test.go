@@ -40,6 +40,7 @@ func TestLoad(t *testing.T) {
 			t.Setenv("AUTH_ADDR", tt.addr)
 			t.Setenv("AUTH_DATABASE_URL", tt.db)
 			t.Setenv("AUTH_JWT_KEY", tt.key)
+			t.Setenv("AUTH_MFA_KEY", validMFAKey)
 			t.Setenv("AUTH_ACCESS_TTL", tt.ttl)
 			t.Setenv("AUTH_REDIS_PASSWORD", strings.Repeat("x", 20))
 
@@ -61,6 +62,7 @@ func TestLoadErrorDoesNotLeakKey(t *testing.T) {
 	const shortKey = "leak-me-please"
 	t.Setenv("AUTH_DATABASE_URL", validDB)
 	t.Setenv("AUTH_JWT_KEY", shortKey)
+	t.Setenv("AUTH_MFA_KEY", validMFAKey)
 
 	_, err := Load()
 	if err == nil {
@@ -99,6 +101,7 @@ func TestLoadRedis(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("AUTH_DATABASE_URL", validDB)
 			t.Setenv("AUTH_JWT_KEY", validKey)
+			t.Setenv("AUTH_MFA_KEY", validMFAKey)
 			t.Setenv("AUTH_REDIS_ADDR", tt.addr)
 			t.Setenv("AUTH_REDIS_PASSWORD", tt.pw)
 
@@ -117,6 +120,7 @@ func TestLoadErrorDoesNotLeakRedisPassword(t *testing.T) {
 	const shortPW = "tiny-pw-value"
 	t.Setenv("AUTH_DATABASE_URL", validDB)
 	t.Setenv("AUTH_JWT_KEY", validKey)
+	t.Setenv("AUTH_MFA_KEY", validMFAKey)
 	t.Setenv("AUTH_REDIS_PASSWORD", shortPW)
 
 	_, err := Load()
@@ -125,5 +129,42 @@ func TestLoadErrorDoesNotLeakRedisPassword(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), shortPW) {
 		t.Errorf("error leaks the password value: %v", err)
+	}
+}
+
+var validMFAKey = strings.Repeat("ab", 32)
+
+func TestLoadMFAKey(t *testing.T) {
+	tests := []struct {
+		name    string
+		mfa     string
+		jwt     string
+		wantErr bool
+	}{
+		{"valid", validMFAKey, validKey, false},
+		{"missing", "", validKey, true},
+		{"not hex", strings.Repeat("zz", 32), validKey, true},
+		{"too short", strings.Repeat("ab", 16), validKey, true},
+		{"too long", strings.Repeat("ab", 33), validKey, true},
+		{"same as jwt key", validMFAKey, validMFAKey, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AUTH_DATABASE_URL", validDB)
+			t.Setenv("AUTH_JWT_KEY", tt.jwt)
+			t.Setenv("AUTH_MFA_KEY", tt.mfa)
+			t.Setenv("AUTH_REDIS_PASSWORD", strings.Repeat("x", 20))
+
+			cfg, err := Load()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Load() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err != nil && tt.mfa != "" && strings.Contains(err.Error(), tt.mfa) {
+				t.Errorf("error leaks the key value: %v", err)
+			}
+			if err == nil && len(cfg.MFAKey.Reveal()) != 32 {
+				t.Errorf("decoded key length = %d, want 32", len(cfg.MFAKey.Reveal()))
+			}
+		})
 	}
 }
