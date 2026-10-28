@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/mail"
 	"strings"
+	"time"
 
 	"github.com/Nova-61/sentinel/services/auth-service/internal/password"
 	"github.com/Nova-61/sentinel/services/auth-service/internal/store"
@@ -25,6 +26,9 @@ type Handler struct {
 	Sessions  SessionStore
 	Parser    TokenParser
 	Checker   SessionChecker
+	MFA       MFAStore
+	Box       SecretBox
+	Now       func() time.Time
 	DummyHash string
 	Logger    *slog.Logger
 }
