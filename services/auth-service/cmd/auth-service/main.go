@@ -46,13 +46,6 @@ func run() int {
 	}
 	defer rdb.Close()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
-
 	tokens, err := token.NewManager([]byte(cfg.JWTKey.Reveal()), cfg.AccessTTL)
 	if err != nil {
 		logger.Error("token manager failed", "error", err)
@@ -65,20 +58,32 @@ func run() int {
 	}
 
 	users := store.NewUsers(pool)
+	sessions := store.NewSessions(rdb)
 	api := &httpapi.Handler{
 		Users:     users,
 		Lookup:    users,
 		Tokens:    tokens,
-		Sessions:  store.NewSessions(rdb),
+		Sessions:  sessions,
+		Parser:    tokens,
+		Checker:   sessions,
 		DummyHash: dummyHash,
 		Logger:    logger,
 	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
 	mux.HandleFunc("POST /register", api.Register)
 	mux.HandleFunc("POST /login", api.Login)
+	mux.Handle("GET /validate", api.Authenticate(http.HandlerFunc(api.Validate)))
+	mux.Handle("POST /logout", api.Authenticate(http.HandlerFunc(api.Logout)))
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           mux,
+		Handler:           api.Recover(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
