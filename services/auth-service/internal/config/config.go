@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 const (
 	minJWTKeyLen        = 32 // байт, под HS256 нужен ключ не короче хеша
 	minRedisPasswordLen = 16
+	mfaKeyLen           = 32 // байт, AES-256
 	maxAccessTTL        = 24 * time.Hour
 )
 
@@ -32,6 +34,7 @@ type Config struct {
 	AccessTTL     time.Duration
 	RedisAddr     string
 	RedisPassword Secret
+	MFAKey        Secret // 32 сырых байта после декодирования из hex
 }
 
 func Load() (Config, error) {
@@ -65,6 +68,15 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("AUTH_REDIS_PASSWORD is required and must be at least %d bytes", minRedisPasswordLen)
 	}
 
+	mfaHex := os.Getenv("AUTH_MFA_KEY")
+	mfaKey, err := hex.DecodeString(mfaHex)
+	if err != nil || len(mfaKey) != mfaKeyLen {
+		return Config{}, fmt.Errorf("AUTH_MFA_KEY is required and must be %d bytes in hex (%d characters)", mfaKeyLen, mfaKeyLen*2)
+	}
+	if mfaHex == jwtKey {
+		return Config{}, errors.New("AUTH_MFA_KEY must differ from AUTH_JWT_KEY")
+	}
+
 	return Config{
 		Addr:          addr,
 		DatabaseURL:   Secret(dbURL),
@@ -72,6 +84,7 @@ func Load() (Config, error) {
 		AccessTTL:     ttl,
 		RedisAddr:     redisAddr,
 		RedisPassword: Secret(redisPW),
+		MFAKey:        Secret(mfaKey),
 	}, nil
 }
 
