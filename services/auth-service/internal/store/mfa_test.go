@@ -76,34 +76,3 @@ func TestMFAState(t *testing.T) {
 		t.Errorf("malformed id: error = %v, want a plain error", err)
 	}
 }
-
-func TestEmailByID(t *testing.T) {
-	dbURL := os.Getenv("AUTH_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("AUTH_DATABASE_URL is not set, skipping integration test")
-	}
-
-	ctx := context.Background()
-	pool, err := NewPool(ctx, dbURL)
-	if err != nil {
-		t.Fatalf("NewPool() error = %v", err)
-	}
-	defer pool.Close()
-	users := NewUsers(pool)
-
-	email := fmt.Sprintf("byid-%d@example.com", time.Now().UnixNano())
-	user, err := users.Create(ctx, email, "hash")
-	if err != nil {
-		t.Fatalf("Create() error = %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id = $1::uuid`, user.ID)
-	})
-
-	if got, err := users.EmailByID(ctx, user.ID); err != nil || got != email {
-		t.Errorf("EmailByID() = %q, %v, want %q", got, err, email)
-	}
-	if _, err := users.EmailByID(ctx, "00000000-0000-4000-8000-000000000000"); !errors.Is(err, ErrNotFound) {
-		t.Errorf("unknown user: error = %v, want ErrNotFound", err)
-	}
-}

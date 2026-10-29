@@ -64,17 +64,3 @@ func (u *Users) EnableTOTP(ctx context.Context, userID string, secretEnc []byte)
 	return nil
 }
 
-// EmailByID возвращает только адрес, без хеша пароля.
-func (u *Users) EmailByID(ctx context.Context, userID string) (string, error) {
-	var email string
-	err := u.pool.QueryRow(ctx,
-		`SELECT email FROM users WHERE id = $1::uuid`, userID,
-	).Scan(&email)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrNotFound
-		}
-		return "", fmt.Errorf("select email: %w", err)
-	}
-	return email, nil
-}
