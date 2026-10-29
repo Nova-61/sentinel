@@ -63,3 +63,4 @@ func (u *Users) EnableTOTP(ctx context.Context, userID string, secretEnc []byte)
 	}
 	return nil
 }
+
